@@ -24,6 +24,7 @@ class Cache {
 public:
 	vector<bool> videos;
 	vector<int> latencies;
+	int idx;
 
 	Cache (int nbEnds, int nbVids) {
 		this->latencies = vector<int>(nbEnds, -1);
@@ -31,6 +32,12 @@ public:
 	}
 
 	Cache(){}
+
+	const double getNbViews () const;
+
+	bool operator<(const Cache & obj) const {
+        return this->getNbViews() < obj.getNbViews(); // keep the same order
+    }
 };
 
 
@@ -40,22 +47,48 @@ vector<Endpoint> endPts;
 vector<int> videos;
 
 
+const double Cache::getNbViews () const {
+		double views = 0;
+
+		for (int endIdx=0 ; endIdx<nbEnds ; endIdx++) {
+			int latency = this->latencies[endIdx];
+
+			Endpoint & endPt = endPts[endIdx];
+			
+			if (latency != -1) { // Si joignable
+				for (int vidIdx=0 ; vidIdx<nbVids ; vidIdx++) {
+					int reqs = endPt.requests[vidIdx];
+
+					if (reqs > 0) {
+						views += reqs * endPt.latency - reqs * this->latencies[endIdx];
+					}
+				}
+			}
+		}
+
+		return views;
+	}
+
+
 class VidsOpt {
 public:
 	int vidIdx;
 	int requests;
+	int opti;
 
 	VidsOpt(){}
 	
-	VidsOpt(int vidIdx, int requests) {
+	VidsOpt(int vidIdx, int requests, int opti) {
 		this->vidIdx = vidIdx;
 		this->requests = requests;
+		this->opti = opti;
 	}
 
 	const double weight () const {
 		double vidSize = videos[vidIdx];
-		double req = requests;
-		return vidSize / req;
+		// double req = requests;
+		// return vidSize / req;
+		return vidSize / this->opti;
 	}
 
 	bool operator<(const VidsOpt & obj) const {
@@ -70,6 +103,9 @@ int main () {
 
 	// Init
 	caches = vector<Cache> (nbCaches, Cache(nbEnds, nbVids));
+	int _i = 0;
+	for (Cache & c : caches)
+		c.idx = _i++;
 
 	// Vids sizes
 	for (int i=0 ; i<nbVids ; i++) {
@@ -107,12 +143,17 @@ int main () {
 
 	// ------------------------------------------------------
 
-	for (int cacheIdx=0 ; cacheIdx<nbCaches ; cacheIdx++) {
-		Cache & cache = caches[cacheIdx];
-
+	vector<Cache> sol;
+	sort(caches.begin(), caches.end());
+	int _i = 0;
+	for (Cache & cache : caches) {
+		cout << _i << endl;
+		// cout << caches.size() << endl;
+		// Cache cache = caches[0];
 		// Possible vids
 		vector<bool> possible (nbVids, false);
 		vector<int> requests (nbVids, 0);
+		vector<int> optis (nbVids, 0);
 		for (int endIdx=0 ; endIdx<nbEnds ; endIdx++) {
 			int latency = cache.latencies[endIdx];
 
@@ -125,23 +166,21 @@ int main () {
 					if (reqs > 0) {
 						possible[vidIdx] = true;
 						requests[vidIdx] += reqs;
+						optis[vidIdx] += reqs * endPt.latency - reqs * cache.latencies[endIdx];
 					}
 				}
 			}
 		}
 
 		// Create vector
-		vector<int> vids;
 		vector<VidsOpt> vids_opts;
 		for (int i=0 ; i<nbVids ; i++) {
 			if (possible[i]) {
-				vids.push_back(i);
-				vids_opts.push_back(VidsOpt(i, requests[i]));
+				vids_opts.push_back(VidsOpt(i, requests[i], optis[i]));
 			}
 		}
 
 		// order
-		random_shuffle(vids.begin(), vids.end());
 		sort(vids_opts.begin(), vids_opts.end());
 
 		// select
@@ -152,8 +191,21 @@ int main () {
 			if (size + videos[idx] <= cacheSize) {
 				cache.videos[idx] = true;
 				size += videos[idx];
+
+				// Maj des views
+				for (int endIdx=0 ; endIdx<nbEnds ; endIdx++) {
+					int latency = cache.latencies[endIdx];
+					
+					if (latency != -1) { // Si joignable
+						Endpoint & endPt = endPts[endIdx];
+						endPt.requests[idx] = 0;
+					}
+				}
 			}
 		}
+
+		sol.push_back(cache);
+		// caches.erase(caches.begin());
 	}
 
 	// ------------------------------------------------------
@@ -165,8 +217,8 @@ int main () {
 	out << nbCaches << endl;
 
 	for (int i=0 ; i<nbCaches ; i++) {
-		Cache & cache = caches[i];
-		out << i;
+		Cache & cache = sol[i];
+		out << cache.idx;
 
 		for (int vidIdx=0 ; vidIdx<nbVids ; vidIdx++) {
 			if (cache.videos[vidIdx]) {
