@@ -1,9 +1,9 @@
 
 CC = g++ -std=c++11
 
-all: 
+all: main
 
-splicing: splicing.o
+main: main.o
 	$(CC) -o $@ $^ -g
 
 %.o: %.cpp
